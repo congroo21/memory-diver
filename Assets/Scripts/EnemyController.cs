@@ -1,60 +1,74 @@
+// Assets/Scripts/EnemyController.cs
 using UnityEngine;
-using System.Collections; // 코루틴(IEnumerator)을 사용하기 위해 반드시 필요합니다.
-
-// 적의 유형을 정의합니다. 앞으로 더 많은 엘리트 타입을 여기에 추가할 수 있습니다.
-public enum EnemyType { Normal, Glitch };
+using System.Collections;
 
 public class EnemyController : MonoBehaviour
 {
-    [Header("AI Type")] // Inspector 창에서 보기 좋게 섹션을 나눕니다.
-    public EnemyType enemyType = EnemyType.Normal; // 이 적의 유형을 정하는 스위치
-
-    [Header("Common Stats")]
+    // 기존 변수들
+    public float health = 10f;
     public float speed = 3f;
-    public int health = 30;
-
-    [Header("Item Drop")]
-    public GameObject powerUpPrefab;
-    [Range(0f, 1f)] public float dropChance = 0.1f;
-
-    [Header("Glitch-Specific Stats")]
-    public float burstSpeed = 10f;    // 글리치가 돌진할 때의 속도
-    public float burstDuration = 0.5f;  // 돌진을 유지하는 시간
-    public float pauseDuration = 1f;    // 돌진 후 멈춰있는 시간
-
-    // 비공개(private) 변수들
+    public EnemyType enemyType;
+    public float dropChance = 0.2f; // 아이템 드랍 확률
+    public GameObject powerUpPrefab; // 드랍할 파워업 프리팹
     private Transform player;
     private Rigidbody2D rb;
 
+    // ★ 새로 추가된 변수
+    private EnemySpawner spawner; // 자신을 생성한 스포너의 참조
+
+    public enum EnemyType { Normal, Glitch }
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+    }
+
     void Start()
     {
-        // 공통적으로 필요한 컴포넌트 및 오브젝트를 미리 찾아둡니다.
-        rb = GetComponent<Rigidbody2D>();
-        GameObject playerObject = GameObject.FindGameObjectWithTag("Player");
-        if (playerObject != null)
-        {
-            player = playerObject.transform;
-        }
-
-        // 만약 이 적의 타입이 '글리치'라면, 특별한 움직임 로직을 시작시킵니다.
+        player = GameObject.FindGameObjectWithTag("Player").transform;
         if (enemyType == EnemyType.Glitch)
         {
-            StartCoroutine(GlitchMovementRoutine());
+            StartCoroutine(GlitchMoveRoutine());
         }
     }
 
-    void Update()
+    void FixedUpdate()
     {
-        // '일반' 타입의 적만 이 단순 추적 로직을 매 프레임 실행합니다.
-        if (enemyType == EnemyType.Normal && player != null)
+        if (player != null && enemyType == EnemyType.Normal)
         {
             Vector2 direction = (player.position - transform.position).normalized;
-            rb.linearVelocity = direction * speed;
+            Vector2 newPos = rb.position + direction * speed * Time.fixedDeltaTime;
+            rb.MovePosition(newPos);
         }
     }
 
-    // 외부(총알 등)에서 호출하는 '피격' 처리 메소드입니다.
-    public void TakeDamage(int damage)
+    IEnumerator GlitchMoveRoutine()
+    {
+        while (true)
+        {
+            // 플레이어 방향으로 돌진
+            if (player != null)
+            {
+                Vector2 direction = (player.position - transform.position).normalized;
+                rb.linearVelocity = direction * speed * 2f; // 글리치는 더 빠른 속도로 돌진
+            }
+
+            yield return new WaitForSeconds(0.5f); // 0.5초간 돌진
+
+            // 잠시 정지
+            rb.linearVelocity = Vector2.zero;
+            yield return new WaitForSeconds(1f); // 1초간 대기
+        }
+    }
+
+    // ★ 새로 추가된 메소드: 자신을 생성한 Spawner를 등록
+    public void SetSpawner(EnemySpawner owner)
+    {
+        this.spawner = owner;
+    }
+    
+    // 데미지를 받는 로직 (BulletController에서 호출)
+    public void TakeDamage(float damage)
     {
         health -= damage;
         if (health <= 0)
@@ -63,38 +77,36 @@ public class EnemyController : MonoBehaviour
         }
     }
 
-    // 적의 '죽음'을 처리하는 내부 메소드입니다.
-    void Die()
+    // 적이 파괴될 때 호출되는 메소드
+    private void Die()
     {
-        Instantiate(powerUpPrefab, transform.position, Quaternion.identity);
+        // ★★★ 중요: 죽음을 Spawner에게 알림
+        if (spawner != null)
+        {
+            spawner.OnEnemyDefeated(this.gameObject);
+        }
+
+        // 아이템 드랍 로직
+        if (Random.value < dropChance)
+        {
+            if (powerUpPrefab != null)
+            {
+                Instantiate(powerUpPrefab, transform.position, Quaternion.identity);
+            }
+        }
+
+        // 자기 자신을 파괴
         Destroy(gameObject);
     }
 
-    // '글리치' 타입 전용 움직임 로직입니다. (코루틴)
-    IEnumerator GlitchMovementRoutine()
+    // 플레이어와 충돌했을 때 처리 (기존과 동일)
+    void OnCollisionEnter2D(Collision2D collision)
     {
-        // 이 로직은 적이 살아있는 동안 무한히 반복됩니다.
-        while (true)
+        if (collision.gameObject.CompareTag("Player"))
         {
-            if (player != null)
-            {
-                // 1. 돌진
-                Vector2 direction = (player.position - transform.position).normalized;
-                rb.AddForce(direction * burstSpeed, ForceMode2D.Impulse);
-                
-                // 2. 돌진 유지 시간만큼 대기
-                yield return new WaitForSeconds(burstDuration);
-                
-                // 3. 정지
-                rb.linearVelocity = Vector2.zero;
-
-                // 4. 정지 상태로 대기
-                yield return new WaitForSeconds(pauseDuration);
-            }
-            else // 혹시 플레이어가 없다면, 그냥 1초 대기
-            {
-                yield return new WaitForSeconds(1f);
-            }
+            // 플레이어에게 데미지를 주는 로직 (PlayerController에 TakeDamage가 있다면)
+            // collision.gameObject.GetComponent<PlayerController>().TakeDamage(1);
+            Die(); // 플레이어와 부딪히면 자폭
         }
     }
 }
