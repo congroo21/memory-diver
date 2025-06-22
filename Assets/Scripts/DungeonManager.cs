@@ -24,12 +24,14 @@ public class DungeonManager : MonoBehaviour
             Destroy(gameObject);
         }
 
-        player = FindObjectOfType<PlayerController>();
+        // [수정된 부분] FindObjectOfType을 FindFirstObjectByType으로 변경했습니다.
+        player = FindFirstObjectByType<PlayerController>();
     }
 
     void Start()
     {
         // 게임 시작 시, 시작 방으로 이동
+        // 시작 위치는 플레이어의 초기 위치를 그대로 사용합니다.
         TransitionToRoom(startingRoom, player.transform.position); 
     }
 
@@ -41,6 +43,7 @@ public class DungeonManager : MonoBehaviour
         currentRoom = newRoom;
         
         // 플레이어 위치를 문 바로 앞으로 재설정
+        // 이 위치는 DoorController가 제공해주는 것이 더 정확할 수 있습니다.
         player.transform.position = doorEntryPosition;
 
         // 카메라가 새로운 방을 비추도록 명령
