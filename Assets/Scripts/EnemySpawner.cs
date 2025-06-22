@@ -13,8 +13,6 @@ public class EnemySpawner : MonoBehaviour
     private List<GameObject> spawnedEnemies = new List<GameObject>();
     private int totalSpawnedCount = 0;
     private Transform player;
-
-    // ★★★ 새로 추가된 상태 변수 ★★★
     private bool isSpawning = false; 
 
     public UnityEvent onAllEnemiesDefeated;
@@ -26,12 +24,11 @@ public class EnemySpawner : MonoBehaviour
 
     public void StartSpawning()
     {
-        // ★★★ 수정된 부분: 이미 스폰 중이면 아무것도 하지 않고 리턴 ★★★
         if (isSpawning)
         {
             return;
         }
-        isSpawning = true; // 스폰 시작 상태로 변경
+        isSpawning = true;
 
         totalSpawnedCount = 0;
         spawnedEnemies.Clear();
@@ -54,7 +51,20 @@ public class EnemySpawner : MonoBehaviour
         int index = Random.Range(0, enemyPrefabs.Length);
         GameObject enemyInstance = Instantiate(enemyPrefabs[index], spawnPosition, Quaternion.identity);
 
-        enemyInstance.GetComponent<EnemyController>().SetSpawner(this);
+        // EnemyController가 있는 경우에만 SetSpawner를 호출하도록 안전장치 추가
+        EnemyController enemyController = enemyInstance.GetComponent<EnemyController>();
+        if(enemyController != null)
+        {
+            enemyController.SetSpawner(this);
+        }
+
+        // BossController가 있는 경우
+        BossController bossController = enemyInstance.GetComponent<BossController>();
+        if(bossController != null)
+        {
+            bossController.SetSpawner(this);
+        }
+
         spawnedEnemies.Add(enemyInstance);
     }
     
@@ -72,17 +82,21 @@ public class EnemySpawner : MonoBehaviour
             {
                 onAllEnemiesDefeated.Invoke();
             }
-
-            // ★★★ 수정된 부분: 방이 클리어되면 스폰 상태를 리셋 ★★★
+            
             isSpawning = false;
             this.enabled = false; 
         }
     }
 
+    // ★★★ 여기가 수정된 핵심 부분입니다 ★★★
     Vector3 GetRandomSpawnPosition()
     {
-        float spawnX = Random.Range(-10f, 10f);
-        float spawnY = Random.Range(-5f, 5f);
-        return new Vector3(spawnX, spawnY, 0);
+        // 스포너를 기준으로 한 상대적인 랜덤 오프셋 값을 계산
+        float spawnX = Random.Range(-10f, 10f); // 값은 방 크기에 맞게 조절
+        float spawnY = Random.Range(-5f, 5f);  // 값은 방 크기에 맞게 조절
+        Vector3 randomOffset = new Vector3(spawnX, spawnY, 0);
+
+        // 스포너 자신의 위치에 랜덤 오프셋을 더하여 최종 스폰 위치를 결정
+        return transform.position + randomOffset;
     }
 }
